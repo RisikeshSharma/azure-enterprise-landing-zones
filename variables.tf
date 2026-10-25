@@ -21,6 +21,18 @@ variable "workload_name" {
   default     = "ent-core"
 }
 
+variable "organization_name" {
+  description = "Organization name for management group root display."
+  type        = string
+  default     = "Enterprise Cloud"
+}
+
+variable "deploy_management_groups" {
+  description = "Toggle management group deployment (requires Tenant Root permissions)."
+  type        = bool
+  default     = false
+}
+
 variable "hub_vnet_cidr" {
   description = "Address space for the central Connectivity Hub VNet."
   type        = list(string)
@@ -51,6 +63,9 @@ variable "hub_subnets" {
     "GatewaySubnet" = {
       address_prefixes = ["10.100.2.0/24"]
     }
+    "AzureBastionSubnet" = {
+      address_prefixes = ["10.100.3.0/24"]
+    }
     "snet-management" = {
       address_prefixes  = ["10.100.10.0/24"]
       service_endpoints = ["Microsoft.KeyVault", "Microsoft.Storage"]
@@ -62,51 +77,64 @@ variable "hub_subnets" {
   }
 }
 
-variable "spoke_vnets" {
-  description = "Map of spoke VNets with configuration iterated via for_each and conditional peering."
+variable "firewall_sku_tier" {
+  description = "Tier of Azure Firewall to deploy. Premium required for TLS Inspection and IDPS."
+  type        = string
+  default     = "Premium"
+
+  validation {
+    condition     = contains(["Standard", "Premium", "Basic"], var.firewall_sku_tier)
+    error_message = "Azure Firewall SKU Tier must be Standard, Premium, or Basic."
+  }
+}
+
+variable "deploy_azure_bastion" {
+  description = "Toggle deployment of Azure Bastion Host."
+  type        = bool
+  default     = true
+}
+
+variable "spoke_landing_zones" {
+  description = "Map of Spoke Landing Zones instantiated dynamically via for_each."
   type = map(object({
-    cidr_block           = list(string)
-    enable_hub_peering   = bool
-    allow_forwarded_traf = bool
+    address_space = list(string)
     subnets = map(object({
-      cidr_block        = list(string)
-      service_endpoints = optional(list(string), [])
+      address_prefixes                          = list(string)
+      service_endpoints                         = optional(list(string), [])
+      private_endpoint_network_policies_enabled = optional(bool, true)
     }))
   }))
   default = {
     "spoke-corp-prod" = {
-      cidr_block           = ["10.101.0.0/16"]
-      enable_hub_peering   = true
-      allow_forwarded_traf = true
+      address_space = ["10.101.0.0/16"]
       subnets = {
         "snet-workloads" = {
-          cidr_block        = ["10.101.1.0/24"]
+          address_prefixes  = ["10.101.1.0/24"]
           service_endpoints = ["Microsoft.Sql", "Microsoft.Storage"]
         }
         "snet-data" = {
-          cidr_block        = ["10.101.2.0/24"]
+          address_prefixes  = ["10.101.2.0/24"]
           service_endpoints = ["Microsoft.Storage"]
         }
       }
     }
     "spoke-online-prod" = {
-      cidr_block           = ["10.102.0.0/16"]
-      enable_hub_peering   = true
-      allow_forwarded_traf = true
+      address_space = ["10.102.0.0/16"]
       subnets = {
         "snet-ingress" = {
-          cidr_block = ["10.102.1.0/24"]
+          address_prefixes = ["10.102.1.0/24"]
         }
         "snet-app" = {
-          cidr_block = ["10.102.2.0/24"]
+          address_prefixes  = ["10.102.2.0/24"]
+          service_endpoints = ["Microsoft.KeyVault"]
         }
       }
     }
   }
 }
 
-variable "network_security_rules" {
-  description = "List of NSG rules for dynamic security_rule block generation."
+variable "default_spoke_security_rules" {
+  description = "List of default security rules iterated dynamically across spoke NSGs."
   type = list(object({
     name                       = string
     priority                   = number
@@ -147,21 +175,10 @@ variable "network_security_rules" {
   ]
 }
 
-variable "firewall_sku_tier" {
-  description = "Tier of Azure Firewall to deploy. Premium required for TLS Inspection and IDPS."
-  type        = string
-  default     = "Premium"
-
-  validation {
-    condition     = contains(["Standard", "Premium", "Basic"], var.firewall_sku_tier)
-    error_message = "Azure Firewall SKU Tier must be Standard, Premium, or Basic."
-  }
-}
-
 variable "enable_cis_policy_initiative" {
   description = "Conditional toggle to assign CIS Microsoft Azure Benchmark initiative."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "tags" {
